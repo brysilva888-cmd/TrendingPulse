@@ -1,0 +1,5 @@
+{
+  "name": "Trending Pulse",
+  "description": "Real-time trending searches from Google and DuckDuckGo powered by Gemini search grounding.",
+  "requestFramePermissions": []
+}
