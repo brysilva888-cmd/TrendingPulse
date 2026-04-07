@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Search, TrendingUp, ExternalLink, RefreshCw, Globe, Shield, Share2, MessageCircle, Sun, Moon } from 'lucide-react';
+import { TrendingUp, ExternalLink, RefreshCw, Globe, Shield, Sun, Moon } from 'lucide-react';
 import { getTrendingSearches, TrendingItem } from './services/geminiService';
 import { LineChart, Line, ResponsiveContainer, YAxis } from 'recharts';
 
@@ -17,9 +17,9 @@ const REGIONS = [
 export default function App() {
   const [trends, setTrends] = useState<TrendingItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [region, setRegion] = useState('UAE');
-  const [lastSent, setLastSent] = useState<string | null>(null);
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('theme') === 'dark' || 
@@ -40,90 +40,24 @@ export default function App() {
 
   const fetchTrends = async (selectedRegion: string) => {
     setLoading(true);
-    const data = await getTrendingSearches(selectedRegion);
-    setTrends(data);
-    setLastUpdated(new Date());
-    setLoading(false);
-  };
-
-  const checkHealth = async () => {
+    setError(null);
     try {
-      const response = await fetch('/api/health');
-      const data = await response.json();
-      if (data.lastSent) setLastSent(data.lastSent);
-    } catch (e) {}
+      const data = await getTrendingSearches(selectedRegion);
+      if (data.length === 0) {
+        setError("No trending data found. Please check your API key and connection.");
+      }
+      setTrends(data);
+      setLastUpdated(new Date());
+    } catch (err: any) {
+      setError(err.message || "Failed to fetch trending searches.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     fetchTrends(region);
-    checkHealth();
-    const interval = setInterval(checkHealth, 30000); // Check every 30s
-    return () => clearInterval(interval);
   }, [region]);
-
-  const shareToWhatsApp = () => {
-    const googleList = trends.filter(t => t.source.toLowerCase().includes('google')).map((t, i) => `${i + 1}. ${t.query}`).join('\n');
-    const ddgList = trends.filter(t => t.source.toLowerCase().includes('duckduckgo')).map((t, i) => `${i + 1}. ${t.query}`).join('\n');
-    
-    const message = `🔥 *Trending Searches in ${region}* (${new Date().toLocaleDateString()})\n\n*Google:*\n${googleList}\n\n*DuckDuckGo:*\n${ddgList}\n\nShared via Trending Pulse`;
-    const encodedMessage = encodeURIComponent(message);
-    window.open(`https://wa.me/?text=${encodedMessage}`, '_blank');
-  };
-
-  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
-
-  const testTelegram = async () => {
-    setTestStatus('testing');
-    try {
-      // 1. Fetch trends using the valid frontend API key
-      const data = await getTrendingSearches(region);
-      
-      // 2. Format the message
-      const googleList = data.filter(t => t.source.toLowerCase().includes('google')).map((t, i) => `${i + 1}. ${t.query}`).join('\n');
-      const ddgList = data.filter(t => t.source.toLowerCase().includes('duckduckgo')).map((t, i) => `${i + 1}. ${t.query}`).join('\n');
-      const message = `🔥 *${region} Trending Pulse* (${new Date().toLocaleDateString()})\n\n*Google:*\n${googleList}\n\n*DuckDuckGo:*\n${ddgList}`;
-
-      // 3. Relay to backend to send to Telegram
-      const response = await fetch('/api/report-trends', { 
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message })
-      });
-      
-      const result = await response.json();
-      if (response.ok) {
-        setTestStatus('success');
-        if (result.lastSent) setLastSent(result.lastSent);
-        setTimeout(() => setTestStatus('idle'), 3000);
-      } else {
-        setTestStatus('error');
-        setTimeout(() => setTestStatus('idle'), 3000);
-      }
-    } catch (error) {
-      setTestStatus('error');
-      setTimeout(() => setTestStatus('idle'), 3000);
-    }
-  };
-
-  // Automation Logic: Check if we should trigger an update
-  useEffect(() => {
-    const checkAutomation = async () => {
-      const now = new Date();
-      const hour = now.getHours();
-      const minute = now.getMinutes();
-      
-      // Trigger around 6 AM and 12 PM (if not already sent recently)
-      const isUpdateSlot = (hour === 6 || hour === 12) && minute < 5;
-      
-      if (isUpdateSlot && testStatus === 'idle') {
-        console.log("Scheduled update slot detected. Triggering Telegram update...");
-        testTelegram();
-      }
-    };
-
-    const interval = setInterval(checkAutomation, 60000); // Check every minute
-    return () => clearInterval(interval);
-  }, [testStatus, region]);
 
   const googleTrends = trends.filter(t => t.source.toLowerCase().includes('google'));
   const ddgTrends = trends.filter(t => t.source.toLowerCase().includes('duckduckgo'));
@@ -154,14 +88,6 @@ export default function App() {
                   {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
                 </p>
               </div>
-              {lastSent && (
-                <div className="mt-1 flex items-center gap-1.5">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <p className="text-[10px] font-medium text-emerald-600 dark:text-emerald-400 uppercase tracking-tight">
-                    Telegram Sent: {lastSent}
-                  </p>
-                </div>
-              )}
             </div>
           </div>
           
@@ -172,14 +98,6 @@ export default function App() {
               aria-label="Toggle Dark Mode"
             >
               {darkMode ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
-            <button 
-              onClick={shareToWhatsApp}
-              disabled={loading || trends.length === 0}
-              className="flex items-center gap-2 px-4 py-2 bg-emerald-500 text-white rounded-full text-sm font-medium hover:bg-emerald-600 transition-all disabled:opacity-50 shadow-sm shadow-emerald-100 dark:shadow-emerald-900/20"
-            >
-              <MessageCircle size={16} />
-              Share to WhatsApp
             </button>
             <button 
               onClick={() => fetchTrends(region)}
@@ -194,6 +112,13 @@ export default function App() {
       </header>
 
       <main className="max-w-7xl mx-auto p-6">
+        {error && !loading && (
+          <div className="mb-8 p-4 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 rounded-xl text-red-600 dark:text-red-400 text-sm font-medium flex items-center gap-3">
+            <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+            {error}
+          </div>
+        )}
+
         {loading && trends.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-32 gap-4">
             <div className="w-12 h-12 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin" />

@@ -45,6 +45,9 @@ Format the response as a JSON array of objects.`,
       const data = JSON.parse(text);
       // Handle potential array or object wrapper
       const items = Array.isArray(data) ? data : (data.trending || data.searches || []);
+      if (items.length === 0) {
+        throw new Error("Gemini returned an empty list of trends.");
+      }
       return items.map((item: any) => ({
         query: item.query || item.title || "Unknown",
         source: item.source || "Google",
@@ -52,12 +55,12 @@ Format the response as a JSON array of objects.`,
         url: item.url || "",
         momentum: Array.isArray(item.momentum) ? item.momentum : Array.from({ length: 12 }, () => Math.floor(Math.random() * 100))
       }));
-    } catch (e) {
+    } catch (e: any) {
       console.error("Failed to parse Gemini JSON response", e);
-      return [];
+      throw new Error(`Data parsing failed: ${e.message}`);
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error fetching trending searches:", error);
-    return [];
+    throw error;
   }
 }
